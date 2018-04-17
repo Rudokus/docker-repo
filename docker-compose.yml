@@ -1,0 +1,225 @@
+version: '3.1'
+
+# Ports
+# Expose ports. Either specify both ports (HOST:CONTAINER),
+# or just the container port (a random host port will be chosen).
+
+# Expose
+# Expose ports without publishing them to the host machine -
+# they’ll only be accessible to linked services. Only the internal port can be specified.
+
+
+services:
+
+  nodejs_api_service:
+    build: ./docker/nodejs_service/
+    ports:
+      - "81:80"
+    volumes:
+      - ./data/nodejs_api_service:/opt/app
+    environment:
+      - "NODE_ENV=development"
+      - "PORT=80"
+      - "SERVICE_NAME=node_api"
+      - "SERVICE_TAGS=node_api"
+    links:
+      - "mongo_service_db"
+
+  mongo_service_db:
+    image: 'mongo:latest'
+    command: mongod --port 27017
+    volumes:
+      - ./data/mongo_service_db/db:/data/db
+    environment:
+      - "SERVICE_NAME=mongo_db"
+      - "SERVICE_TAGS=mongo_db"
+    ports:
+      - "27017:27017"
+
+  nodejs_airport_service:
+    build: ./docker/nodejs_app/
+    ports:
+      - "82:80"
+    volumes:
+      - ./data/nodejs_airport_service:/opt/app
+    environment:
+      - "NODE_ENV=development"
+      - "PORT=80"
+      - "SERVICE_NAME=node_airport_service"
+      - "SERVICE_TAGS=node_airport_service"
+    links:
+      - "mysql_service_db"
+
+  mysql_service_db:
+    build: ./docker/mysql/
+    restart: always
+    ports:
+      - '3306'
+    expose:
+     - '3306'
+    volumes:
+      - ./data/mysql_service_db/db:/var/lib/mysql
+    environment:
+      SERVICE_NAME: "mysql_db"
+      SERVICE_TAGS: "mysql_db"
+      MYSQL_ROOT_PASSWORD: secret
+      MYSQL_DATABASE: micro_php
+      MYSQL_USER: mysql_php
+      MYSQL_PASSWORD: mysql_php
+
+  nodejs_app:
+    build: ./docker/nodejs_app/
+    ports:
+      - "80:80"
+    volumes:
+      - ./data/nodejs_app:/opt/app
+    environment:
+      - "CONSUL_SERVER=localhost:8500"
+      - "NODE_ENV=development"
+      - "PORT=80"
+      - "SERVICE_NAME=app"
+      - "SERVICE_TAGS=app"
+    links:
+      - "nodejs_api_service"
+
+  nginx:
+    image: nginx
+    build: ./docker/nginx
+    environment:
+      - "affinity:container!=nodes_nginx_*"
+      - "CONSUL_PORT_8500_TCP_ADDR=127.0.0.1"
+      - "SERVICE_NAME=nginx"
+      - "SERVICE_TAGS=nginx"
+    restart: always
+
+  # Core services: Registry
+  consul_registry_service:
+    image: consul:latest
+    restart: always
+    env_file: ./docker/consul/.env
+    command:
+      - agent
+      - -client=0.0.0.0
+      - -datacenter=ams1
+      - -dev
+      - -log-level=err
+    expose:
+      - 8500
+    ports:
+      - 8500:8500
+
+  # Core services: Micro API
+#  micro_api_service:
+#    image: quay.io/profects/micro:latest
+#    env_file: ./docker/consul/.env
+#    links:
+#     - consul_registry_service
+#     - nats
+#    command:
+#     - api
+#    ports:
+#     - "8080:8080"
+#    restart: always
+
+  #A high-performance cloud native messaging system
+  # Core services: Broker and transport
+#  nats:
+#    image: nats:latest
+#    restart: always
+#    expose:
+#      - 4222
+#    ports:
+#      - 4222:4222
+
+# Message broker
+#rabbitmq:
+#  image: rabbitmq:3.5.3
+#  ports:
+#    - "5672:5672"
+#    - "15672:15672"
+#
+
+# Java RESTful Service
+#  restful_service:
+#    image: java:openjdk-8u45-jdk
+#    working_dir: /app
+#    volumes:
+#      - ./spring-boot-restful-service/build/libs:/app
+#    command: java -jar /app/spring-boot-restful-service.jar
+#    ports:
+#      - "8081:8080"
+#    links:
+#      - rabbitmq
+#      - mongodb
+#    environment:
+#      SPRING_DATA_MONGODB_URI: mongodb://mongodb/userregistration
+#      SPRING_RABBITMQ_HOST: rabbitmq
+
+  # Registrator automatically registers and deregisters services for any Docker container
+  # By inspecting containers as they come online.
+  registrator:
+    command: -internal consul://consul_registry_service:8500
+    image: gliderlabs/registrator:latest
+    volumes:
+      - "/var/run/docker.sock:/tmp/docker.sock"
+    environment:
+      - "affinity:container!=nodes_registrator_*"
+      - "SERVICE_NAME=registrator"
+      - "SERVICE_TAGS=registrator"
+    links:
+      - consul_registry_service
+    depends_on:
+      - consul_registry_service
+
+  eventuate_zookeeper:
+    image: eventuateio/eventuateio-local-zookeeper:0.10.0
+    ports:
+      - 2181:2181
+      - 2888:2888
+      - 3888:3888
+
+  eventuate_kafka:
+    image: eventuateio/eventuateio-local-kafka:0.10.0
+    ports:
+      - 9092:9092
+    links:
+      - eventuate_zookeeper
+    environment:
+      - ADVERTISED_HOST_NAME=${DOCKER_HOST_IP}
+      - KAFKA_HEAP_OPTS=-Xmx320m -Xms320m
+      - ZOOKEEPER_SERVERS=eventuate_zookeeper:2181
+
+  eventuate_mysql:
+    image: eventuateio/eventuateio-local-mysql:0.10.0
+    ports:
+      - 3306:3306
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_USER=mysqluser
+      - MYSQL_PASSWORD=mysqlpw
+
+  eventuate_cdcservice:
+    image: eventuateio/eventuateio-local-cdc-service:0.10.0
+    ports:
+      - "8099:8080"
+    links:
+      - eventuate_mysql
+      - eventuate_kafka
+      - eventuate_zookeeper
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://eventuate_mysql/eventuate
+      SPRING_DATASOURCE_USERNAME: mysqluser
+      SPRING_DATASOURCE_PASSWORD: mysqlpw
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.jdbc.Driver
+      EVENTUATELOCAL_KAFKA_BOOTSTRAP_SERVERS: eventuate_kafka:9092
+      EVENTUATELOCAL_ZOOKEEPER_CONNECTION_STRING: eventuate_zookeeper:2181
+      EVENTUATELOCAL_CDC_DB_USER_NAME: root
+      EVENTUATELOCAL_CDC_DB_PASSWORD: rootpassword
+      EVENTUATELOCAL_CDC_POLLING_INTERVAL_IN_MILLISECONDS: 500
+      EVENTUATELOCAL_CDC_MAX_EVENTS_PER_POLLING: 1000
+      EVENTUATELOCAL_CDC_MAX_ATTEMPTS_FOR_POLLING: 100
+      EVENTUATELOCAL_CDC_POLLING_RETRY_INTERVAL_IN_MILLISECONDS: 500
+
+volumes:
+  consul-data:
+    driver: local

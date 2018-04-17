@@ -1,0 +1,24 @@
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.App {
+    text-align: center;
+}
+
+.App-header {
+    padding: 20px;
+    color: #000;
+    background: #ededed;
+    padding-bottom: 50px;
+    height: 50vh;
+}
+
+.App-title {
+    float: left;
+    font-size: 1.2em;
+    letter-spacing: 1px;
+    font-weight: 300;
+}

@@ -1,0 +1,23 @@
+{
+  "name": "node",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Node.js",
+  "author": "Ruud Van Oijen",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev-docker": "./node_modules/nodemon/bin/nodemon.js --debug=5858",
+    "dev-host": "nodemon --debug=5858"
+  },
+  "dependencies": {
+    "body-parser": "~1.12.0",
+    "express": "^4.14.1",
+    "mongoose": "^4.12.4",
+    "morgan": "^1.8.1",
+    "simple-mongoose-autoincrement": "^1.2.1"
+  },
+  "devDependencies": {
+    "nodemon": "^1.11.0"
+  }
+}
